@@ -59,7 +59,7 @@ mp4:
   height: 720
   fps: 25
   gop: 1
-  bitrate: 10240
+  bitrate: 16384
   profile: 2
 
 jpeg:

@@ -25,6 +25,16 @@ The gamma table has 257 nodes, 16 input codes apart (12-bit in, 12-bit out). Wit
 
 Setting the environment variable `SCI_VPSS_NR` before starting Divinus leaves VPSS noise reduction on, for comparisons.
 
+## Status
+
+Experimental, for testing. It runs on one camera (an IMX291 50H20L on a Raspberry Pi 5 capture host with RMS `alpha2`) since 7 November 2026.
+
+- Frame timing works: the SEI frame interval is 40.000 ms with a spread of about 6 us through an RTSP relay, and RMS `alpha2` reads every frame.
+- Until 22 November the sensor black level was not removed (the CV300 ISP ignores its black level attribute on this path), so the night sky sat at about 62 of 255 and faint signal was quantised away. `pedestal` fixes this. Detection performance against stock firmware is being measured; a side-by-side test with a stock camera on the same sky is planned.
+- Known open points: hot pixels (static defect correction is not set up yet), the night gains are a starting point taken from an IMX307 profile, native 1080p has not been tried on this setup, and the right bitrate is still being measured (see `divinus.yaml`).
+
+Please report what you see (camera, sensor, firmware, RMS version, stars and meteors per night against a stock camera) in the issues.
+
 ## Supported hardware
 
 Hi3516CV300 with a Sony IMX291 sensor over LVDS (board type 50H20L). Tested on one camera, in use with RMS `alpha2` since 7 November 2026. The code is part of the `hisi-gen3` HAL, which also drives the Hi3516EV100; that chip and other sensors have not been tested. Another sensor needs its own sensor file and its own `pedestal` value.
@@ -54,13 +64,13 @@ This project provides no flash images, no vendor libraries and no Majestic. Divi
 3. Edit `/root/science/science.conf`: at least `lat` and `lon` (see below).
 4. Create the sensor file on the camera from the one the firmware ships: `sh /root/science/make_sensor_ini.sh`. It reads `/etc/sensors/imx291_i2c_lvds_1080p_line.ini` and writes `/root/science/imx291_lvds_divinus.ini`, adding the LVDS keys the Divinus parser requires (`sync_mode`, `data_endian`, `sync_code_endian`, `sync_code_4` to `sync_code_7`). The firmware's file is not redistributed here.
 5. Stop Majestic from starting: `chmod a-x /etc/init.d/S95majestic`.
-6. Set up time keeping. The CV300 has no real-time clock. Run chronyd on the camera, slaved to a chrony server on the capture host (the busybox NTP client also works, less precisely), or use `time set` over port 9600. SEI capture times are only as good as this clock.
+6. Set up time keeping. The CV300 has no real-time clock, and SEI capture times are only as good as the camera clock. Recommended: chronyd on the camera, slaved to a chrony server on the capture host. Build it with `CC=/path/to/arm-openipc-linux-musleabi-gcc tools/science/build_chrony.sh` (fetches chrony 4.6.1 and checks its SHA-256), copy `chronyd` to `/usr/sbin/` and `chronyc` to `/usr/bin/`, `res/science/chrony/chrony.conf` to `/etc/chrony.conf` (set `HOST_IP`) and `res/science/chrony/S49chronyd` to `/etc/init.d/`, then `chmod a-x /etc/init.d/S49ntpd` so busybox ntpd no longer starts. On the host, allow the camera's subnet in chrony. `chronyc tracking` on the camera shows the offset (a few microseconds on a LAN). The busybox NTP client also works, less precisely; `time set` over port 9600 sets the clock once.
 7. Reboot. `S96science` starts Divinus from `/root/science`, restarts it 5 s after any exit and logs to `/tmp/divinus.log` (in RAM; cut to its last 50 KB at a restart once over 200 KB). Lines from science mode start with `[science]`.
 8. Check: `echo query | nc <camera> 9600` prints the state, and the stream is at `rtsp://<camera>:554/`.
 
 ### divinus.yaml
 
-The provided file streams H.264 at 1280x720 and 25 fps over RTSP on port 554, all-intra (`gop: 1`), VBR at 10 Mbit/s, High profile (`profile: 2`), with the sensor at 1920x1080 and the encoder scaling down. Set `width: 1920` and `height: 1080` for native resolution. OSD, ONVIF, mDNS, audio, JPEG and night mode GPIO handling are off. The web server listens on port 8081. See [Configuration](config.md) for the other keys.
+The provided file streams H.264 at 1280x720 and 25 fps over RTSP on port 554, all-intra (`gop: 1`), VBR at 16 Mbit/s (the night stream carries real sensor noise, which costs bits; the encoder's QP for each frame is in the SEI record, so check it at night and raise the bitrate if it stays well above the 12 floor), High profile (`profile: 2`), with the sensor at 1920x1080 and the encoder scaling down. Set `width: 1920` and `height: 1080` for native resolution. OSD, ONVIF, mDNS, audio, JPEG and night mode GPIO handling are off. The web server listens on port 8081. See [Configuration](config.md) for the other keys.
 
 ### science.conf
 
@@ -86,6 +96,21 @@ The provided file streams H.264 at 1280x720 and 25 fps over RTSP on port 554, al
 | `black_level` | unset | 12-bit black level written to the ISP black level attribute and reasserted; unset leaves the sensor default. Had no visible effect on the CV300 tested |
 
 The night defaults are IMX307 values used as a starting point; tune them for each camera and site. The night baseline sets manual exposure and gains, unity white balance (256/256/256), the colour matrix on and the night saturation. Day mode sets automatic exposure at a fixed frame rate, automatic white balance, the colour matrix on and the day saturation. A switch happens only when the sun crosses `switch_deg`, so settings sent over port 9600 hold until the next crossing.
+
+## Using it with RMS
+
+Science mode needs the RMS `alpha2` branch, which reads the SEI frame times and the 16-bit FF planes. Settings in the RMS `.config` used on the camera tested:
+
+| Key | Value | Why |
+|-----|-------|-----|
+| `device` | `rtsp://<camera>:554/` (or a local relay) | The stream |
+| `gamma` | `0.5` | Matches the camera's gamma table |
+| `response_table` | `off` | Use the power law |
+| `switch_camera_modes` | `false` | The camera switches day and night itself by sun altitude |
+| `ff_avepixel16`, `ff_stdpixel16` | `true` | Keep the 16-bit mean and standard deviation |
+| `catalog_mag_limit` | `6.0` on deep cameras | RMS versions with the per-FF recalibration coverage gate but without its fix of 19 November 2026 (prerelease commit adcd9a2a) reject the recalibration of a camera that detects many stars fainter than this limit, and GMN's trajectory correlator then skips its observations |
+
+Leave the star detection, meteor detection and ML filter thresholds at their defaults until you have compared against a stock camera; they were tuned on stock firmware.
 
 ## Control port 9600
 

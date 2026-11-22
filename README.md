@@ -1,5 +1,11 @@
 ![OpenIPC logo][logo]
 
+## Meteor science fork
+
+This fork adds a **science mode** for meteor cameras on Hi3516CV300 + Sony IMX291 (the 50H20L module used by many Global Meteor Network stations): no noise reduction or sharpening, all-intra H.264, a gamma 0.5 curve starting at the sensor black level, and a per-frame RMSP v5 SEI record with capture time, exposure, gains and white balance, as read by the `alpha2` branch of [RMS](https://github.com/CroatianMeteorNetwork/RMS). It installs on top of the official OpenIPC firmware; no flash images or vendor files are distributed.
+
+**Status: experimental, for testing.** Read [doc/science.md](doc/science.md) for what it does, how to build and install it, how to set up RMS, and how to roll back. Prebuilt binaries are on the Releases page.
+
 ## Divinus
 **_Divinus is a new open source, multi-platform streamer_**
 

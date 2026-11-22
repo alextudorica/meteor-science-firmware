@@ -1,0 +1,18 @@
+#!/bin/sh
+# chronyd in place of busybox ntpd (S49ntpd made non-executable). Config /etc/chrony.conf.
+case "$1" in
+start)
+	echo -n "Starting chronyd: "
+	mkdir -p /var/run/chrony
+	/usr/sbin/chronyd -f /etc/chrony.conf && echo "OK" || echo "FAIL"
+	;;
+stop)
+	killall chronyd 2>/dev/null
+	;;
+restart)
+	$0 stop; sleep 1; $0 start
+	;;
+*)
+	echo "Usage: $0 {start|stop|restart}"; exit 1
+	;;
+esac
