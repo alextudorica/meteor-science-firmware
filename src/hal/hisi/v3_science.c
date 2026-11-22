@@ -8,6 +8,7 @@
 
 #include <dlfcn.h>
 #include <math.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -109,6 +110,46 @@ static void sci_resolve(void)
 
 static int confLoaded;
 
+// Clients allowed on the :9600 control port (IPv4/CIDR, science.conf control_allow).
+// The protocol has no authentication (RMS speaks it as is), so without an explicit
+// list only loopback is served.
+#define SCI_ALLOW_MAX 8
+static struct { uint32_t net, mask; } sciAllow[SCI_ALLOW_MAX];
+static int sciAllowCount;
+
+static void sci_parse_allow(const char *list)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", list);
+    sciAllowCount = 0;
+    for (char *save = NULL, *tok = strtok_r(buf, " ,\t\r\n", &save);
+         tok && sciAllowCount < SCI_ALLOW_MAX; tok = strtok_r(NULL, " ,\t\r\n", &save)) {
+        int bits = 32;
+        char *slash = strchr(tok, '/');
+        if (slash) {
+            *slash = 0;
+            bits = atoi(slash + 1);
+        }
+        struct in_addr a;
+        if (bits < 0 || bits > 32 || !inet_aton(tok, &a)) {
+            sci_log("control_allow: ignoring '%s'\n", tok);
+            continue;
+        }
+        uint32_t mask = bits ? htonl(0xFFFFFFFFu << (32 - bits)) : 0;
+        sciAllow[sciAllowCount].mask = mask;
+        sciAllow[sciAllowCount].net = a.s_addr & mask;
+        sciAllowCount++;
+    }
+}
+
+static int sci_client_allowed(uint32_t addr)
+{
+    if ((ntohl(addr) >> 24) == 127) return 1;
+    for (int i = 0; i < sciAllowCount; i++)
+        if ((addr & sciAllow[i].mask) == sciAllow[i].net) return 1;
+    return 0;
+}
+
 static void sci_load_conf(void)
 {
     if (confLoaded) return;
@@ -118,10 +159,16 @@ static void sci_load_conf(void)
         sci_log("no %s, using defaults (no sun-driven day/night)\n", SCI_CONF);
         return;
     }
-    char line[160], key[64];
+    char line[300], key[64], str[256];
     double v;
     while (fgets(line, sizeof(line), f)) {
-        if (line[0] == '#' || sscanf(line, " %63[a-z_] = %lf", key, &v) != 2)
+        if (line[0] == '#')
+            continue;
+        if (sscanf(line, " control_allow = %255[^\n]", str) == 1) {
+            sci_parse_allow(str);
+            continue;
+        }
+        if (sscanf(line, " %63[a-z_] = %lf", key, &v) != 2)
             continue;
         if (!strcmp(key, "lat")) conf.lat = v;
         else if (!strcmp(key, "lon")) conf.lon = v;
@@ -143,6 +190,8 @@ static void sci_load_conf(void)
         else if (!strcmp(key, "mono_to_utc")) conf.monoToH = v;
     }
     fclose(f);
+    if (!sciAllowCount)
+        sci_log("no control_allow in %s: :%d serves loopback only\n", SCI_CONF, SCI_PORT);
     sci_log("conf lat=%.4f lon=%.4f switch=%.1f night a=%u d=%u i=%u e=%u satu=%d chroma_qp=%+d mono %.2f-%.2f\n",
         conf.lat, conf.lon, conf.switchDeg, conf.nightAGain, conf.nightDGain,
         conf.nightIspDGain, conf.nightExp, conf.nightSatu, conf.chromaQpOffset,
@@ -726,14 +775,9 @@ static void sci_command(char *line, char *resp, size_t len)
             struct timeval tv = { .tv_sec = (time_t)strtoll(tok[2], NULL, 10) };
             r = settimeofday(&tv, NULL);
             snprintf(resp, len, "time set: %s\n", r ? "FAIL" : "OK");
-        } else if (!strcmp(tok[1], "ntp") && n >= 4 && !strcmp(tok[2], "host")) {
-            FILE *f = fopen("/etc/ntp.conf", "w");
-            if (f) {
-                fprintf(f, "server %s iburst\n", tok[3]);
-                fclose(f);
-                r = system("/etc/init.d/S49ntpd restart >/dev/null 2>&1");
-            } else r = -1;
-            snprintf(resp, len, "time ntp host %s: %s\n", tok[3], r ? "FAIL" : "OK");
+        } else if (!strcmp(tok[1], "ntp")) {
+            // Time sync is the camera's own chronyd (/etc/chrony.conf), not a control command.
+            snprintf(resp, len, "time ntp: not supported, configure /etc/chrony.conf\n");
         } else {
             time_t t = time(NULL);
             struct tm tm;
@@ -768,8 +812,21 @@ static void *sci_server_thread(void *arg)
     }
     sci_log("control server on :%d\n", SCI_PORT);
     for (;;) {
-        int c = accept(s, NULL, NULL);
+        struct sockaddr_in peer;
+        socklen_t plen = sizeof(peer);
+        int c = accept(s, (struct sockaddr *)&peer, &plen);
         if (c < 0) continue;
+        if (!sci_client_allowed(peer.sin_addr.s_addr)) {
+            static time_t lastRefusal;
+            time_t now = time(NULL);
+            if (now - lastRefusal >= 60) {
+                sci_log("refused :%d client %s (not in control_allow)\n", SCI_PORT,
+                    inet_ntoa(peer.sin_addr));
+                lastRefusal = now;
+            }
+            close(c);
+            continue;
+        }
         struct timeval to = { .tv_sec = 3 };
         setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(to));
         char line[512];

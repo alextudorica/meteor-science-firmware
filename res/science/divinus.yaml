@@ -1,7 +1,12 @@
 system:
   sensor_config: /root/science/imx291_lvds_divinus.ini
   web_port: 8081
-  web_enable_auth: false
+  # Only the capture host may reach the web API (it can change the configuration).
+  web_whitelist:
+    - HOST_IP/32
+  web_enable_auth: true
+  web_auth_user: admin
+  web_auth_pass: CHANGE_ME
   web_enable_static: false
   isp_thread_stack_size: 16384
   venc_stream_thread_stack_size: 16384
@@ -25,7 +30,10 @@ onvif:
 
 rtsp:
   enable: true
-  enable_auth: false
+  # RMS: rtsp://rms:<password>@<camera>:554/
+  enable_auth: true
+  auth_user: rms
+  auth_pass: CHANGE_ME
   port: 554
 
 record:

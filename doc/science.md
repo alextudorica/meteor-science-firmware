@@ -54,7 +54,7 @@ This project provides no flash images, no vendor libraries and no Majestic. Divi
 3. Edit `/root/science/science.conf`: at least `lat` and `lon` (see below).
 4. Create the sensor file on the camera from the one the firmware ships: `sh /root/science/make_sensor_ini.sh`. It reads `/etc/sensors/imx291_i2c_lvds_1080p_line.ini` and writes `/root/science/imx291_lvds_divinus.ini`, adding the LVDS keys the Divinus parser requires (`sync_mode`, `data_endian`, `sync_code_endian`, `sync_code_4` to `sync_code_7`). The firmware's file is not redistributed here.
 5. Stop Majestic from starting: `chmod a-x /etc/init.d/S95majestic`.
-6. Set up time keeping. The CV300 has no real-time clock. Use the firmware's NTP client (`/etc/ntp.conf`, or the `time ntp host` command below), chrony, or `time set` over port 9600. SEI capture times are only as good as this clock.
+6. Set up time keeping. The CV300 has no real-time clock. Run chronyd on the camera, slaved to a chrony server on the capture host (the busybox NTP client also works, less precisely), or use `time set` over port 9600. SEI capture times are only as good as this clock.
 7. Reboot. `S96science` starts Divinus from `/root/science`, restarts it 5 s after any exit and logs to `/tmp/divinus.log` (in RAM; cut to its last 50 KB at a restart once over 200 KB). Lines from science mode start with `[science]`.
 8. Check: `echo query | nc <camera> 9600` prints the state, and the stream is at `rtsp://<camera>:554/`.
 
@@ -89,7 +89,7 @@ The night defaults are IMX307 values used as a starting point; tune them for eac
 
 ## Control port 9600
 
-One command per TCP connection: send a line ending in a newline (at most 511 bytes; the server waits up to 3 s), read the reply, and the server closes the connection. Commands are handled one at a time. There is no authentication: keep port 9600 (and the RTSP and web ports) on a trusted network.
+One command per TCP connection: send a line ending in a newline (at most 511 bytes; the server waits up to 3 s), read the reply, and the server closes the connection. Commands are handled one at a time. The protocol has no authentication (RMS speaks it as is), so the server only answers addresses listed in `control_allow` in `science.conf` (IPv4 or CIDR, comma separated); without that line it serves loopback only. Refused connections are closed without a reply and logged at most once a minute. The sample `divinus.yaml` turns on RTSP and web authentication and limits the web API to the capture host; replace `CHANGE_ME` and `HOST_IP` before use. Keep the camera on a network only the capture host shares.
 
 `OK` or `FAIL` in a reply reflects the return code of the vendor call. Settings sent here are not saved and last until Divinus restarts; the maintenance thread reasserts the ISP module bypasses, black level, gamma and VPSS settings every 10 s.
 
@@ -114,7 +114,7 @@ One command per TCP connection: send a line ending in a newline (at most 511 byt
 | `ircut day` / `ircut night` | Sets the internal day/night flag only, for the night saturation window; drives no IR-cut filter and changes no exposure | `ircut <word>: OK (mode only, no IR-cut actuator driven)` |
 | `time` | Read the camera clock | `time: YYYY-MM-DD HH:MM:SS UTC` |
 | `time set <unix seconds>` | Set the camera clock | `time set: OK` |
-| `time ntp host <host>` | Write `server <host> iburst` to `/etc/ntp.conf` and restart `/etc/init.d/S49ntpd` | `time ntp host <host>: OK` |
+| `time ntp ...` | Not supported: time sync is the camera's chronyd or NTP client, configured on the camera | `time ntp: not supported, configure /etc/chrony.conf` |
 | `reboot` | Sync and reboot after 1 s | `reboot: OK` |
 | any other word (`encode`, `osd`, `flip`, `mirror`, `colortone`, ...) | Nothing; these are fixed in `divinus.yaml` | `<word>: ignored (fixed in divinus.yaml / not applicable)` |
 
@@ -180,7 +180,7 @@ chmod a+x /etc/init.d/S95majestic
 reboot
 ```
 
-Science mode changes nothing outside `/root/science` and `/etc/init.d` (and `/etc/ntp.conf` if `time ntp host` was used). Removing `/root/science` and `/etc/init.d/S96science` leaves the firmware as installed. OpenIPC's `firstboot` command resets all user changes on the camera, including network settings.
+Science mode changes nothing outside `/root/science` and `/etc/init.d`. Removing `/root/science` and `/etc/init.d/S96science` leaves the firmware as installed. OpenIPC's `firstboot` command resets all user changes on the camera, including network settings.
 
 ## Licence
 
