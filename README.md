@@ -1,124 +1,26 @@
-![OpenIPC logo][logo]
+# Meteor Science Firmware
 
-## Meteor science fork
+A science mode for meteor cameras built on a Hi3516CV300 SoC with a Sony IMX291 sensor (the 50H20L module used by many meteor stations). It runs on top of the official OpenIPC firmware and replaces its streamer with one that keeps the image fit for photometry and timing:
 
-This fork adds a **science mode** for meteor cameras on Hi3516CV300 + Sony IMX291 (the 50H20L module used by many Global Meteor Network stations): no noise reduction or sharpening, all-intra H.264, a gamma 0.5 curve starting at the sensor black level, and a per-frame RMSP v5 SEI record with capture time, exposure, gains and white balance, as read by the `alpha2` branch of [RMS](https://github.com/CroatianMeteorNetwork/RMS). It installs on top of the official OpenIPC firmware; no flash images or vendor files are distributed.
+- no noise reduction, sharpening, dynamic range compression or other image processing that alters faint or moving point sources
+- every frame encoded as an independent H.264 picture (all-intra), deblocking off
+- a gamma 0.5 curve starting at the sensor black level, so faint signal keeps its levels
+- a per-frame RMSP v5 SEI record with capture time, exposure, gains, white balance and encoder QP, as read by the `alpha2` branch of [RMS](https://github.com/CroatianMeteorNetwork/RMS)
+- a text control server on TCP 9600 (exposure, gains, white balance, clock), limited to listed clients
+- day and night switching by sun altitude on the camera itself
 
-**Status: experimental, for testing.** Read [doc/science.md](doc/science.md) for what it does, how to build and install it, how to set up RMS, and how to roll back. Prebuilt binaries are on the Releases page.
+**Status: experimental, for testing.** See the status section of the documentation for what has been measured and what is open.
 
-## Divinus
-**_Divinus is a new open source, multi-platform streamer_**
+## Documentation
 
-[![Telegram](https://openipc.org/images/telegram_button.svg)][telegram]
+[doc/science.md](doc/science.md): what it changes and why, supported hardware, building, installing on an OpenIPC camera, time keeping with chrony, RMS settings, the control protocol, the SEI record layout, and rollback.
 
-### Inner workings
+## Download
 
-This project strives to adopt a KISS "keep it simple, stupid!" structure while being as portable as can be.
+Prebuilt binaries are on the Releases page. To build from source, see [doc/science.md](doc/science.md#building).
 
-Compared to most streamer software solutions available to this day, it attaches to the application-specific peripherals of a system-on-a-chip using an easy to understand HAL platform (hardware abstraction layer) proper to each chip series it supports.
+No flash images, vendor libraries or vendor SDK files are distributed. The camera keeps its OpenIPC firmware and vendor libraries; this project adds a streamer, its configuration and an init script.
 
-Since it is using runtime dynamic linking, its executable remains particularly compact and can be run on a multitude of environments, including in a tethered context (e.g. running from a temporary filesystem on read-only systems).
+## Licence
 
-In spite of these design choices, Divinus boasts numerous features that cater to a wide range of uses you will be able to make of it.
-
-<p align="center">
-  <img src="doc/webui.png" alt="WebUI" width="800">
-</p>
-
-
-### Supported hardware and features
-
-| SoC Family              | Audio Stream | JPEG Snapshot | fMP4 Stream | RTSP Stream | On-Screen Display* |
-|-------------------------|:------------:|:-------------:|:-----------:|:-----------:|:------------------:|
-| AK3918EV200             | ↻            | ✔️           | ✔️          | ✔️          | ✔️                |
-| CV181x[^1]              | ↻            | ↻            | ✔️          | ✔️          | ↻                 |
-| FH885xV100[^2]          | ↻            | ✔️           | ✔️          | ✔️          | ✔️                |
-| FH885xV200[^3]          | ↻            | ✔️           | ✔️          | ✔️          | ✔️                |
-| GM813x[^4]              | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3516AV100[^5]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3516CV100[^6]         | ↻            | ↻            | ✔️          | ✔️          | ✔️                |
-| Hi3516CV200[^7]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3516CV300[^8]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3516CV500[^9]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3516EV200[^10]        | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| GK7205V200[^11]          | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3519V100[^12]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3519AV100             | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| Hi3559AV100             | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| RV11xx[^13]             | ↻            | ✔️           | ✔️          | ✔️          | ↻                 |
-| T31 series              | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| infinity3[^14]          | ↻            | ↻            | ↻           | ↻           | ↻                 |
-| infinity6[^15]          | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| infinity6b0[^16]        | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| infinity6e[^17]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| infinity6c[^18]         | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| mercury6[^19]           | ✔️           | ✔️           | ✔️          | ✔️          | ✔️                |
-| sun8iw21p1[^20]         | ↻            | ↻            | ↻           | ↻           | ↻                 |
-
-_✔️ - supported, ↻ - in development, ✗ - unsupported, ⁿ/ₐ - not supported by hardware_
-
-_* At the moment, text, RGB or bitfield bitmaps and PNG overlays are handled, more matricial formats and covers are to follow_
-
-[^1]: CV181x\[C/H\], SG200\[0/2\]
-[^2]: FH885\[2/6\]V100
-[^3]: FH885\[2/6/8\]V200
-[^4]: GM813\[5/6/8\]\(S\)
-[^5]: Hi3516AV100 and Hi3516DV100
-[^6]: Hi3516CV100, Hi3518AV100, Hi3518CV100 and Hi3518EV100
-[^7]: Hi3516CV200 and Hi3518EV20\[0/1\]
-[^8]: Hi3516CV300 and Hi3516EV100
-[^9]: Hi3516AV300, Hi3516CV500 and Hi3516DV300
-[^10]: Hi3516DV200, Hi3516EV200/300 and Hi3518EV300
-[^11]: GK7202V300, GK7205V200/300 and GK7605V100
-[^12]: Hi3516AV200 and Hi3519V101
-[^13]: RV110\[3/7/8/9\], RV1106\(G2/G3\) and RV1126
-[^14]: MSC313E, MSC316\[DC/Q\] and MSC318
-[^15]: SSC323, SSC325\(D/DE\) and SSC327\(D/DE/Q\)
-[^16]: SSC33\[3/5/7\]\(DE\)
-[^17]: SSC30K\[D/Q\], SSC336\[D/Q\], SSC338\[D/G/Q\] and SSC339G
-[^18]: SSC377\(D/DE/QE\) and SSC378\[DE/QE\]
-[^19]: SSC359G
-[^20]: V851S\(E\) and V853
-
-
-### Documentation
-
-- [Configuration](doc/config.md) - _doc/config.md_
-- [Endpoints](doc/endpoints.md) - _doc/endpoints.md_
-- [Overlays](doc/overlays.md) - _doc/overlays.md_
-- [Science mode](doc/science.md) - _doc/science.md_
-
-
-### Roadmap
-
-- [ ] Audio source, input gain and output volume
-- [ ] ONVIF write support, enhanced compatiblity
-- [ ] Motors and PTZ control
-- [ ] Lens correction profiles
-- [ ] Motion detection
-- [ ] Alternative audio codecs
-
-
-### Disclaimer
-
-This software is provided AS IS and for research purposes only. OpenIPC shall not be liable for any loss or damage caused by the use of these files or the use of, or reliance upon, any information contained within this project.
-
-
-### Technical support and donations
-
-Please **_[support our project](https://openipc.org/support-open-source)_** with donations or orders for development or maintenance. Thank you!
-
-<p align="center">
-<a href="https://opencollective.com/openipc/contribute/backer-14335/checkout" target="_blank"><img src="https://opencollective.com/webpack/donate/button@2x.png?color=blue" width="250" alt="Open Collective donate button"></a>
-</p>
-
-
-[firmware]: https://github.com/openipc/firmware
-[logo]: https://raw.githubusercontent.com/OpenIPC/.github/refs/heads/main/assets/openipc-logo-black.svg
-[mit]: https://opensource.org/license/mit
-[opencollective]: https://opencollective.com/openipc
-[paypal]: https://www.paypal.com/donate/?hosted_button_id=C6F7UJLA58MBS
-[project]: https://github.com/openipc
-[telegram]: https://openipc.org/our-channels
-[website]: https://openipc.org
-[wiki]: https://github.com/openipc/wiki
+MIT (see `LICENSE`). The streamer is built on Divinus (OpenIPC, MIT); its original documentation is in [doc/divinus.md](doc/divinus.md). The libraries in `src/lib` keep their own licences.
