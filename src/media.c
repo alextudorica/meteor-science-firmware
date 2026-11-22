@@ -1,4 +1,5 @@
 #include "media.h"
+#include "science.h"
 
 char audioOn = 0, udpOn = 0;
 pthread_mutex_t aencMtx, chnMtx, mp4Mtx;
@@ -1049,6 +1050,9 @@ int sdk_start(void) {
         }
 
     HAL_INFO("media", "SDK has started successfully!\n");
+#ifdef SCIENCE
+    science_start();
+#endif
 
     return EXIT_SUCCESS;
 }

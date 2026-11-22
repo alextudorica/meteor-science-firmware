@@ -1,6 +1,7 @@
 #if defined(__arm__) && !defined(__ARM_PCS_VFP)
 
 #include "v3_hal.h"
+#include "../../science.h"
 
 v3_isp_alg      v3_ae_lib = { .id = 0, .libName = "hisi_ae_lib" };
 v3_aud_impl     v3_aud;
@@ -169,8 +170,18 @@ int v3_channel_create(char index, short width, short height, char mirror, char f
     {
         v3_vpss_mode mode;
         mode.userModeOn = 1;
+#ifdef SCIENCE
+        // The CV300 VPSS never starts a job when its output size differs from
+        // its input; keep it at the capture size and let VENC take the full frame,
+        // as majestic does.
+        mode.dest.width = v3_config.vichn.capt.width ?
+            v3_config.vichn.capt.width : v3_config.videv.rect.width;
+        mode.dest.height = v3_config.vichn.capt.height ?
+            v3_config.vichn.capt.height : v3_config.videv.rect.height;
+#else
         mode.dest.width = width;
         mode.dest.height = height;
+#endif
         mode.doubleOn = 0;
         mode.pixFmt = V3_PIXFMT_YUV420SP;
         mode.compress = V3_COMPR_NONE;
@@ -284,7 +295,11 @@ int v3_pipeline_create(void)
         group.dest.height = v3_config.vichn.capt.height ?
             v3_config.vichn.capt.height : v3_config.videv.rect.height;
         group.pixFmt = V3_PIXFMT_YUV420SP;
+#ifdef SCIENCE
+        group.nredOn = getenv("SCI_VPSS_NR") ? 1 : 0;
+#else
         group.nredOn = 1;
+#endif
         group.interlMode = v3_config.videv.progressiveOn ? 1 : 2;
         if (ret = v3_vpss.fnCreateGroup(_v3_vpss_grp, &group))
             return ret;
@@ -569,10 +584,17 @@ int v3_video_create(char index, hal_vidconfig *config)
                     .bitrate = config->bitrate, .avgLvl = 1 }; break;
             case HAL_VIDMODE_VBR:
                 channel.rate.mode = V3_VENC_RATEMODE_H264VBR;
+#ifdef SCIENCE
+                channel.rate.h264Vbr = (v3_venc_rate_h26xvbr){ .gop = config->gop,
+                    .statTime = 1, .srcFps = config->framerate, .dstFps = config->framerate,
+                    .maxBitrate = MAX(config->bitrate, config->maxBitrate), .maxQual = 48,
+                    .minQual = 12, .minIQual = 12 }; break;
+#else
                 channel.rate.h264Vbr = (v3_venc_rate_h26xvbr){ .gop = config->gop,
                     .statTime = 1, .srcFps = config->framerate, .dstFps = config->framerate,
                     .maxBitrate = MAX(config->bitrate, config->maxBitrate), .maxQual = config->maxQual,
                     .minQual = config->minQual, .minIQual = config->minQual }; break;
+#endif
             case HAL_VIDMODE_QP:
                 channel.rate.mode = V3_VENC_RATEMODE_H264QP;
                 channel.rate.h264Qp = (v3_venc_rate_h26xqp){ .gop = config->gop,
@@ -597,6 +619,10 @@ int v3_video_create(char index, hal_vidconfig *config)
 attach:
     if (ret = v3_venc.fnCreateChannel(index, &channel))
         return ret;
+#ifdef SCIENCE
+    if (config->codec == HAL_VIDCODEC_H264)
+        science_venc_created(index);
+#endif
 
     if (config->codec != HAL_VIDCODEC_JPG &&
         (ret = v3_venc.fnStartReceiving(index)))
@@ -824,26 +850,55 @@ void *v3_video_thread(void)
 
                     if (v3_vid_cb) {
                         hal_vidstream outStrm;
-                        hal_vidpack outPack[stream.count];
+                        hal_vidpack outPack[stream.count + 1];
                         outStrm.count = stream.count;
                         outStrm.seq = stream.sequence;
-                        for (int j = 0; j < stream.count; j++) {
+                        int seiAt = -1;
+#ifdef SCIENCE
+                        static unsigned char seiBuf[256];
+                        int seiLen = 0;
+                        if (v3_state[i].payload == HAL_VIDCODEC_H264 && stream.count) {
+                            seiAt = 0;
+                            for (int j = 0; j < stream.count; j++)
+                                if (stream.packet[j].naluType.h264Nalu <= V3_VENC_NALU_H264_ISLICE ||
+                                    stream.packet[j].naluType.h264Nalu == V3_VENC_NALU_H264_IDRSLICE) { seiAt = j; break; }
+                            seiLen = science_sei(seiBuf, sizeof(seiBuf),
+                                stream.packet[seiAt].timestamp, stream.sequence,
+                                stream.h264Info.meanQual, stream.h264Info.startQual);
+                            if (seiLen <= 0) seiAt = -1;
+                        }
+#endif
+                        for (int j = 0, o = 0; j < stream.count; j++, o++) {
+#ifdef SCIENCE
+                            if (j == seiAt) {
+                                outPack[o].data = seiBuf;
+                                outPack[o].length = seiLen;
+                                outPack[o].naluCnt = 1;
+                                outPack[o].nalu[0].length = seiLen;
+                                outPack[o].nalu[0].offset = 0;
+                                outPack[o].nalu[0].type = 6;
+                                outPack[o].offset = 0;
+                                outPack[o].timestamp = stream.packet[j].timestamp;
+                                o++;
+                                outStrm.count++;
+                            }
+#endif
                             v3_venc_pack *pack = &stream.packet[j];
-                            outPack[j].data = pack->data;
-                            outPack[j].length = pack->length;
-                            outPack[j].naluCnt = 1;
-                            outPack[j].nalu[0].length = pack->length;
-                            outPack[j].nalu[0].offset = pack->offset;
+                            outPack[o].data = pack->data;
+                            outPack[o].length = pack->length;
+                            outPack[o].naluCnt = 1;
+                            outPack[o].nalu[0].length = pack->length;
+                            outPack[o].nalu[0].offset = pack->offset;
                             switch (v3_state[i].payload) {
                                 case HAL_VIDCODEC_H264:
-                                    outPack[j].nalu[0].type = pack->naluType.h264Nalu;
+                                    outPack[o].nalu[0].type = pack->naluType.h264Nalu;
                                     break;
                                 case HAL_VIDCODEC_H265:
-                                    outPack[j].nalu[0].type = pack->naluType.h265Nalu;
+                                    outPack[o].nalu[0].type = pack->naluType.h265Nalu;
                                     break;
                             }
-                            outPack[j].offset = pack->offset;
-                            outPack[j].timestamp = pack->timestamp;
+                            outPack[o].offset = pack->offset;
+                            outPack[o].timestamp = pack->timestamp;
                         }
                         outStrm.pack = outPack;
                         (*v3_vid_cb)(i, &outStrm);
@@ -905,7 +960,13 @@ int v3_system_init(char *snrConfig)
             v3_config.vichn.capt.height ?
                 v3_config.vichn.capt.height : v3_config.videv.rect.height,
             V3_PIXFMT_YUV420SP, alignWidth);
+#ifdef SCIENCE
+        // A scaled VPSS output needs blocks of its own: with 4, VI and the
+        // group queue hold them all and the scaler never starts a job.
+        pool.comm[0].blockCnt = 8;
+#else
         pool.comm[0].blockCnt = 4;
+#endif
 
         if (ret = v3_vb.fnConfigPool(&pool))
             return ret;

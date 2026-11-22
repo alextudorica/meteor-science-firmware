@@ -55,10 +55,20 @@ float __expf_finite(float x) { return expf(x); }
 int __fgetc_unlocked(FILE *stream) { return fgetc(stream); }
 double __log_finite(double x) { return log(x); }
 
-#if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
+#if defined(SDK_OFF32)
+// Vendor SDK libraries built against uClibc without LFS (e.g. Hi3516CV300) call
+// mmap() with a 32-bit off_t. MMZ addresses sit above 2 GiB, so treat it as unsigned.
+void *mmap_off32(void *start, size_t len, int prot, int flags, int fd, unsigned long off) __asm__("mmap");
+void *mmap_off32(void *start, size_t len, int prot, int flags, int fd, unsigned long off) {
+    return (void*)syscall(SYS_mmap2, start, len, prot, flags, fd, off >> 12);
+}
+#elif defined(__arm__) || defined(__aarch64__) || defined(__mips__)
 void *mmap(void *start, size_t len, int prot, int flags, int fd, off_t off) {
     return (void*)syscall(SYS_mmap2, start, len, prot, flags, fd, (long)(off >> 12));
 }
+#endif
+
+#if defined(__arm__) || defined(__aarch64__) || defined(__mips__)
 
 void *__mmap64(void *start, size_t len, int prot, int flags, int fd, off_t off) {
     return (void*)syscall(SYS_mmap2, start, len, prot, flags, fd, (long)(off >> 12));
