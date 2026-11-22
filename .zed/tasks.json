@@ -1,0 +1,80 @@
+[
+    {
+        "label": "Config: ak39xx",
+        "command": "cp .zed/profiles/ak39xx.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: cvitek",
+        "command": "cp .zed/profiles/cvitek.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: fhan-v2",
+        "command": "cp .zed/profiles/fhan-v2.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: gm813x",
+        "command": "cp .zed/profiles/gm813x.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: hisi-v1",
+        "command": "cp .zed/profiles/hisi-v1.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: hisi-v2",
+        "command": "cp .zed/profiles/hisi-v2.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: hisi-v2a",
+        "command": "cp .zed/profiles/hisi-v2a.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: hisi-v4",
+        "command": "cp .zed/profiles/hisi-v4.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: hisi-v4a",
+        "command": "cp .zed/profiles/hisi-v4a.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: inge-t31",
+        "command": "cp .zed/profiles/inge-t31.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: rv11xx",
+        "command": "cp .zed/profiles/rv11xx.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: star6",
+        "command": "cp .zed/profiles/star6.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    },
+    {
+        "label": "Config: star6e",
+        "command": "cp .zed/profiles/star6e.txt compile_flags.txt",
+        "hide": "always",
+        "use_new_terminal": false
+    }
+]
