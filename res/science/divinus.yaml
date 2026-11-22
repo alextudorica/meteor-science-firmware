@@ -1,0 +1,61 @@
+system:
+  sensor_config: /root/science/imx291_lvds_divinus.ini
+  web_port: 8081
+  web_enable_auth: false
+  web_enable_static: false
+  isp_thread_stack_size: 16384
+  venc_stream_thread_stack_size: 16384
+  web_server_thread_stack_size: 65536
+  time_format: "%Y-%m-%d %H:%M:%S"
+  watchdog: 0
+
+isp:
+  mirror: false
+  flip: false
+  antiflicker: 0
+
+osd:
+  enable: false
+
+mdns:
+  enable: false
+
+onvif:
+  enable: false
+
+rtsp:
+  enable: true
+  enable_auth: false
+  port: 554
+
+record:
+  enable: false
+
+stream:
+  enable: false
+
+night_mode:
+  enable: false
+
+http_post:
+  enable: false
+
+audio:
+  enable: false
+
+mp4:
+  enable: true
+  codec: H264
+  mode: VBR
+  width: 1280
+  height: 720
+  fps: 25
+  gop: 1
+  bitrate: 10240
+  profile: 2
+
+jpeg:
+  enable: false
+
+mjpeg:
+  enable: false

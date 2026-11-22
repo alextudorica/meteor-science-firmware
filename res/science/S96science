@@ -1,0 +1,40 @@
+#!/bin/sh
+# Science streamer (divinus + RMSP v5 SEI + :9600 control) in place of majestic.
+# Majestic stays installed but not executable; re-enable with chmod +x /etc/init.d/S95majestic.
+
+DIR=/root/science
+LOG=/tmp/divinus.log
+PID=/var/run/science-supervise.pid
+
+supervise() {
+	while true; do
+		# /tmp is RAM: keep the log short
+		[ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 200000 ] && tail -c 50000 "$LOG" > "$LOG.1" && mv "$LOG.1" "$LOG"
+		cd "$DIR" && ./divinus >> "$LOG" 2>&1
+		echo "$(date -u '+%F %T') divinus exited $?, restarting in 5 s" >> "$LOG"
+		sleep 5
+	done
+}
+
+case "$1" in
+start)
+	echo -n "Starting science streamer: "
+	( trap '' HUP; supervise ) < /dev/null > /dev/null 2>&1 &
+	echo $! > "$PID"
+	echo "OK"
+	;;
+stop)
+	[ -f "$PID" ] && kill "$(cat "$PID")" 2>/dev/null
+	rm -f "$PID"
+	killall divinus 2>/dev/null
+	;;
+restart)
+	$0 stop
+	sleep 2
+	$0 start
+	;;
+*)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+	;;
+esac
